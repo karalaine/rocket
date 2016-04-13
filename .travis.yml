@@ -35,6 +35,7 @@ before_script:
     fi
 
 script:
+  - make check
   - make &&
     make examples/example_bass &&
     make examples/example_bass-player
