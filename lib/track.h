@@ -3,7 +3,7 @@
 
 #include <string>
 #include <cstdlib>
-#include <vector>
+#include <list>
 #include <fstream>
 
 #include "base.h"
@@ -27,25 +27,19 @@ namespace rocket
 		};
 
 		double GetVal(double);
-		bool SetKey(Key&& key);
+		void SetKey(Key&& key);
 		bool DelKey(int);
 		void ClearKeys();
 		void SaveKeys(std::ofstream& stream);
 	private:
-		int FindKey(int);
-		inline int KeyIdxFloor(int row)
-		{
-			int idx = FindKey(row);
-			if (idx < 0)
-				idx = -idx - 2;
-			return idx;
-		};
+		std::list<Track::Key>::iterator Track::FindKey(int row);
+
 		inline bool IsKeyFrame(int row)
 		{
-			return FindKey(row) >= 0;
+			return FindKey(row) != m_keys.end();
 		}
 		std::string name;
-		std::vector<Key> m_keys;
+		std::list<Key> m_keys;
 	};
 }
 

@@ -4,6 +4,7 @@
 #include "base.h"
 #include "track.h"
 #include <map>
+#include <vector>
 
 #ifndef SYNC_PLAYER
 
@@ -59,10 +60,11 @@ namespace rocket
 		bool Connect(const std::string&, unsigned short);
 		bool Update(int, SynCb&, void *);
 		void SaveTracks();
+		void SetIOCallbacks(SyncIOCb&& callbacks);
 		Track& GetTrack(const std::string&);
 	private:
 		bool FetchTrackData(const std::string&);
-		bool ReadTrackData(const std::string&);
+		bool ReadTrackData(Track&, const std::string&);
 		SOCKET ServerConnect(const std::string&, unsigned short);
 		bool SetKeyCmd();
 		bool DelKeyCmd();

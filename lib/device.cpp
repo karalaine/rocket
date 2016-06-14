@@ -9,32 +9,38 @@
 
 namespace rocket
 {
-	static const char *path_encode(const char *path)
+
+//#define SYNC_PLAYER 1
+
+	SyncDevice::SyncDevice(const std::string& basename)
+		: m_base(basename),
+		m_tracks(),
+		m_trackNames(),
+		m_row(-1),
+		m_socket(INVALID_SOCKET),
+		m_IOCb()
 	{
-		static char temp[FILENAME_MAX];
-		int i, pos = 0;
-		int path_len = (int)strlen(path);
-		for (i = 0; i < path_len; ++i) {
-			int ch = path[i];
-			if (isalnum(ch) || ch == '.' || ch == '_') {
-				if (pos >= sizeof(temp) - 1)
-					break;
-
-				temp[pos++] = (char)ch;
-			}
-			else {
-				if (pos >= sizeof(temp) - 3)
-					break;
-
-				temp[pos++] = '-';
-				temp[pos++] = "0123456789ABCDEF"[(ch >> 4) & 0xF];
-				temp[pos++] = "0123456789ABCDEF"[ch & 0xF];
-			}
-		}
-
-		temp[pos] = '\0';
-		return temp;
+		m_IOCb.open = [](const std::string& file, const char * mode) { return (void*)fopen(file.c_str(), mode); };
+		m_IOCb.read = (size_t(*)(void *, size_t, size_t, void *))fread;
+		m_IOCb.close = (int(*)(void *))fclose;
 	}
+
+	SyncDevice::~SyncDevice()
+	{
+		int i;
+#ifndef SYNC_PLAYER
+		if (m_socket != INVALID_SOCKET)
+			closesocket(m_socket);
+#endif
+
+#if defined(USE_AMITCP) && !defined(SYNC_PLAYER)
+		if (socket_base) {
+			CloseLibrary(socket_base);
+			socket_base = NULL;
+		}
+#endif
+	}
+
 
 #ifndef SYNC_PLAYER
 
@@ -181,102 +187,51 @@ namespace rocket
 
 #else
 
-	void sync_set_io_cb(struct sync_device *d, struct sync_io_cb *cb)
+	void SyncDevice::SetIOCallbacks(SyncIOCb&& callbacks)
 	{
-		d->io_cb.open = cb->open;
-		d->io_cb.read = cb->read;
-		d->io_cb.close = cb->close;
+		m_IOCb = std::move(callbacks);
 	}
 
 #endif
 
-#ifdef NEED_STRDUP
-	static inline char *rocket_strdup(const char *str)
+	const std::string path_encode(const std::string& path)
 	{
-		char *ret = malloc(strlen(str) + 1);
-		if (ret)
-			strcpy(ret, str);
-		return ret;
-	}
-#define strdup rocket_strdup
-#endif
-
-	struct sync_device *sync_create_device(const char *base)
-	{
-		struct sync_device *d = static_cast<sync_device *>(malloc(sizeof(*d)));
-		if (!d)
-			return NULL;
-
-		d->base = strdup(path_encode(base));
-		if (!d->base) {
-			free(d);
-			return NULL;
+		std::string temp;
+		int i, pos = 0;
+		for (char ch : path) {
+			if (isalnum(ch) || ch == '.' || ch == '_') {
+				temp[pos++] = ch;
+			}
+			else {
+				temp[pos++] = '-';
+				temp[pos++] = "0123456789ABCDEF"[(ch >> 4) & 0xF];
+				temp[pos++] = "0123456789ABCDEF"[ch & 0xF];
+			}
 		}
-
-		d->tracks = NULL;
-		d->num_tracks = 0;
-
-#ifndef SYNC_PLAYER
-		d->row = -1;
-		m_socket = INVALID_SOCKET;
-#endif
-
-		d->io_cb.open = (void *(*)(const char *, const char *))fopen;
-		d->io_cb.read = (size_t(*)(void *, size_t, size_t, void *))fread;
-		d->io_cb.close = (int(*)(void *))fclose;
-
-		return d;
+		return temp;
 	}
 
-	void sync_destroy_device(sync_device *d)
-	{
-		int i;
-
-#ifndef SYNC_PLAYER
-		if (m_socket != INVALID_SOCKET)
-			closesocket(m_socket);
-#endif
-
-		for (i = 0; i < (int)d->num_tracks; ++i) {
-			free(d->tracks[i]->name);
-			free(d->tracks[i]->keys);
-			free(d->tracks[i]);
-		}
-		free(d->tracks);
-		free(d->base);
-		free(d);
-
-#if defined(USE_AMITCP) && !defined(SYNC_PLAYER)
-		if (socket_base) {
-			CloseLibrary(socket_base);
-			socket_base = NULL;
-		}
-#endif
-	}
-
-	bool SyncDevice::ReadTrackData(const std::string& name)
+	bool SyncDevice::ReadTrackData(Track& track, const std::string& name)
 	{
 		int i;
 		const std::string& path = m_base + "_" + path_encode(name) + ".track";
 		void *fp = m_IOCb.open(path, "rb");
-		if (!fp)
+		if (!fp)	
 			return -1;
+		int num_keys = -1;
+		m_IOCb.read(&num_keys, sizeof(int), 1, fp);
 
-		m_IOCb.read(&t->num_keys, sizeof(int), 1, fp);
-		t->keys = static_cast<track_key*>(malloc(sizeof(track_key) * t->num_keys));
-		if (!t->keys)
-			return -1;
-
-		for (i = 0; i < (int)t->num_keys; ++i) {
-			struct track_key *key = t->keys + i;
+		for (i = 0; i < num_keys; ++i) {
+			Track::Key key;
 			char type;
-			d->io_cb.read(&key->row, sizeof(int), 1, fp);
-			d->io_cb.read(&key->value, sizeof(float), 1, fp);
-			d->io_cb.read(&type, sizeof(char), 1, fp);
-			key->type = (enum key_type)type;
+			float value;
+			int row;
+			m_IOCb.read(&key.row, sizeof(int), 1, fp);
+			m_IOCb.read(&key.value, sizeof(float), 1, fp);
+			m_IOCb.read(&key.type, sizeof(char), 1, fp);
+			track.SetKey(std::move(key));
 		}
-
-		d->io_cb.close(fp);
+		m_IOCb.close(fp);
 		return 0;
 	}
 
@@ -328,7 +283,7 @@ namespace rocket
 			xrecv(m_socket, (char *)&row, sizeof(row), 0) ||
 			xrecv(m_socket, (char *)&v.i, sizeof(v.i), 0) ||
 			xrecv(m_socket, (char *)&type, 1, 0))
-			return -1;
+			return false;
 
 		track = ntohl(track);
 		v.i = ntohl(v.i);
@@ -341,7 +296,8 @@ namespace rocket
 		key.type = (Track::Key::Type)type;
 		auto trackName = m_trackNames[track];
 		auto trackObject = m_tracks.at(trackName);
-		return trackObject.SetKey(std::move(key));
+		trackObject.SetKey(std::move(key));
+		return true;
 	}
 
 	bool SyncDevice::DelKeyCmd()
@@ -452,7 +408,7 @@ namespace rocket
 			FetchTrackData(name);
 		else
 #endif
-		ReadTrackData(name);
+		ReadTrackData(t.first->second, name);
 		return t.first->second;
 	}
 }
