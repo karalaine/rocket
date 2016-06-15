@@ -43,9 +43,9 @@
 namespace rocket
 {
 	struct SynCb {
-		void(*pause)(void *, int);
+		void(*pause)(void *, bool);
 		void(*set_row)(void *, int);
-		int(*is_playing)(void *);
+		bool(*is_playing)(void *);
 	};
 	struct SyncIOCb {
 		void *(*open)(const std::string& filename, const char *mode);
@@ -55,11 +55,10 @@ namespace rocket
 
 	class SyncDevice {
 	public:
-		SyncDevice(const std::string&);
+		SyncDevice(const std::string&, int trackCount);
 		~SyncDevice();
 		bool Connect(const std::string&, unsigned short);
 		bool Update(int, SynCb&, void *);
-		void SaveTracks();
 		void SetIOCallbacks(SyncIOCb&& callbacks);
 		Track& GetTrack(const std::string&);
 	private:
@@ -68,10 +67,9 @@ namespace rocket
 		SOCKET ServerConnect(const std::string&, unsigned short);
 		bool SetKeyCmd();
 		bool DelKeyCmd();
-		bool SaveTracks(const std::string& path);
+		bool SaveTracks();
 		std::string m_base;
-		std::map<std::string, Track> m_tracks;
-		std::vector<std::string&> m_trackNames;
+		std::vector<Track> m_tracks;
 		size_t num_tracks;
 
 #ifndef SYNC_PLAYER

@@ -25,7 +25,6 @@
  #endif
  /* int is 32-bit for both x86 and x64 */
  typedef unsigned int uint32_t;
- #define UINT32_MAX UINT_MAX
 #elif defined(__GNUC__)
  #include <stdint.h>
 #elif defined(M68000)

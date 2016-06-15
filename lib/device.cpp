@@ -6,44 +6,13 @@
 #include <stdio.h>
 #include <string.h>
 #include <fstream>
+#include <algorithm>
 
 namespace rocket
 {
 
-//#define SYNC_PLAYER 1
-
-	SyncDevice::SyncDevice(const std::string& basename)
-		: m_base(basename),
-		m_tracks(),
-		m_trackNames(),
-		m_row(-1),
-		m_socket(INVALID_SOCKET),
-		m_IOCb()
-	{
-		m_IOCb.open = [](const std::string& file, const char * mode) { return (void*)fopen(file.c_str(), mode); };
-		m_IOCb.read = (size_t(*)(void *, size_t, size_t, void *))fread;
-		m_IOCb.close = (int(*)(void *))fclose;
-	}
-
-	SyncDevice::~SyncDevice()
-	{
-		int i;
 #ifndef SYNC_PLAYER
-		if (m_socket != INVALID_SOCKET)
-			closesocket(m_socket);
-#endif
-
-#if defined(USE_AMITCP) && !defined(SYNC_PLAYER)
-		if (socket_base) {
-			CloseLibrary(socket_base);
-			socket_base = NULL;
-		}
-#endif
-	}
-
-
-#ifndef SYNC_PLAYER
-
+#pragma comment(lib, "Ws2_32.lib")
 #define CLIENT_GREET "hello, synctracker!"
 #define SERVER_GREET "hello, demo!"
 
@@ -184,6 +153,35 @@ namespace rocket
 
 		return sock;
 	}
+	//#define SYNC_PLAYER 1
+
+	SyncDevice::SyncDevice(const std::string& basename, int trackCount)
+		: m_base(basename),
+		m_tracks(),
+		m_row(-1),
+		m_socket(INVALID_SOCKET),
+		m_IOCb()
+	{
+		m_tracks.reserve(trackCount);
+		m_IOCb.open = [](const std::string& file, const char * mode) { return (void*)fopen(file.c_str(), mode); };
+		m_IOCb.read = (size_t(*)(void *, size_t, size_t, void *))fread;
+		m_IOCb.close = (int(*)(void *))fclose;
+	}
+
+	SyncDevice::~SyncDevice()
+	{
+#ifndef SYNC_PLAYER
+		if (m_socket != INVALID_SOCKET)
+			closesocket(m_socket);
+#endif
+
+#if defined(USE_AMITCP) && !defined(SYNC_PLAYER)
+		if (socket_base) {
+			CloseLibrary(socket_base);
+			socket_base = NULL;
+		}
+#endif
+	}
 
 #else
 
@@ -197,7 +195,8 @@ namespace rocket
 	const std::string path_encode(const std::string& path)
 	{
 		std::string temp;
-		int i, pos = 0;
+		temp.resize(255);
+		int pos = 0;
 		for (char ch : path) {
 			if (isalnum(ch) || ch == '.' || ch == '_') {
 				temp[pos++] = ch;
@@ -208,6 +207,7 @@ namespace rocket
 				temp[pos++] = "0123456789ABCDEF"[ch & 0xF];
 			}
 		}
+		temp.resize(pos);
 		return temp;
 	}
 
@@ -217,34 +217,30 @@ namespace rocket
 		const std::string& path = m_base + "_" + path_encode(name) + ".track";
 		void *fp = m_IOCb.open(path, "rb");
 		if (!fp)	
-			return -1;
+			return false;
 		int num_keys = -1;
 		m_IOCb.read(&num_keys, sizeof(int), 1, fp);
 
 		for (i = 0; i < num_keys; ++i) {
 			Track::Key key;
-			char type;
-			float value;
-			int row;
 			m_IOCb.read(&key.row, sizeof(int), 1, fp);
 			m_IOCb.read(&key.value, sizeof(float), 1, fp);
 			m_IOCb.read(&key.type, sizeof(char), 1, fp);
 			track.SetKey(std::move(key));
 		}
 		m_IOCb.close(fp);
-		return 0;
+		return true;
 	}
 
-	bool SyncDevice::SaveTracks(const std::string& path)
+	bool SyncDevice::SaveTracks()
 	{
-		std::ofstream fp(path, std::ios_base::out | std::ios_base::binary);
-		if (!fp.is_open())
-			return false;
-		for (auto it : m_tracks) {
-			auto& track = it.second;
+		for (auto& track : m_tracks) {
+			std::ofstream fp(track.GetName(), std::ios_base::out | std::ios_base::binary);
+			if (!fp.is_open())
+				return false;
 			track.SaveKeys(fp);
+			fp.close();
 		}
-		fp.close();
 		return true;
 	}
 
@@ -254,12 +250,12 @@ namespace rocket
 	{
 		unsigned char cmd = GET_TRACK;
 		assert(name.length() <= UINT32_MAX);
-		uint32_t name_len = htonl(name.length());
+		uint32_t name_len = htonl(static_cast<uint32_t>(name.length()));
 
 		/* send request data */
-		if (xsend(m_socket, (char *)&cmd, 1, 0) ||
-			xsend(m_socket, (char *)&name_len, sizeof(name_len), 0) ||
-			xsend(m_socket, name.c_str(), (int)name_len, 0))
+		if (xsend(m_socket, reinterpret_cast<char *>(&cmd), 1, 0) ||
+			xsend(m_socket, reinterpret_cast<char *>(&name_len), sizeof(name_len), 0) ||
+			xsend(m_socket, name.c_str(), name.length(), 0))
 		{
 			closesocket(m_socket);
 			m_socket = INVALID_SOCKET;
@@ -294,8 +290,7 @@ namespace rocket
 		assert(type < (int)Track::Key::Type::KEY_TYPE_COUNT);
 		assert(track < m_tracks.size());
 		key.type = (Track::Key::Type)type;
-		auto trackName = m_trackNames[track];
-		auto trackObject = m_tracks.at(trackName);
+		auto& trackObject = m_tracks.at(track);
 		trackObject.SetKey(std::move(key));
 		return true;
 	}
@@ -311,30 +306,28 @@ namespace rocket
 		track = ntohl(track);
 		row = ntohl(row);
 		assert(track < m_tracks.size());
-		auto trackName = m_trackNames[track];
-		auto trackObject = m_tracks.at(trackName);
+		auto& trackObject = m_tracks.at(track);
 		return trackObject.DelKey(row);
 	}
 
 	bool SyncDevice::Connect(const std::string& host, unsigned short port)
 	{
-		int i;
 		if (m_socket != INVALID_SOCKET)
 			closesocket(m_socket);
 
 		m_socket = ServerConnect(host, port);
 		if (m_socket == INVALID_SOCKET)
-			return -1;
+			return false;
 
-		for (auto track : m_tracks) {
-			track.second.ClearKeys();
-			if (FetchTrackData(track.first)) {
+		for (auto& track : m_tracks) {
+			track.ClearKeys();
+			if (FetchTrackData(track.GetName())) {
 				closesocket(m_socket);
 				m_socket = INVALID_SOCKET;
-				return -1;
+				return false;
 			}
 		}
-		return 0;
+		return true;
 	}
 
 	bool SyncDevice::Update(int row, SynCb& cb, void *cb_param)
@@ -399,16 +392,22 @@ namespace rocket
 
 	Track& SyncDevice::GetTrack(const std::string& name)
 	{
-		auto it = m_tracks.find(name);
+		auto it = std::find_if(m_tracks.begin(), m_tracks.end(),[&](Track &track)
+			{ return track.GetName() == name; });
 		if (it != m_tracks.end())
-			return it->second;
-		auto t = m_tracks.emplace(name, Track());
+			return *it;
+		m_tracks.emplace_back(Track(name));
+		auto& item = m_tracks.back();
 #ifndef SYNC_PLAYER
 		if (m_socket != INVALID_SOCKET)
+		{
 			FetchTrackData(name);
+		}
 		else
 #endif
-		ReadTrackData(t.first->second, name);
-		return t.first->second;
+		{
+			ReadTrackData(item, name);
+		}
+		return item;
 	}
 }

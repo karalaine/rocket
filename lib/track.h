@@ -3,7 +3,7 @@
 
 #include <string>
 #include <cstdlib>
-#include <list>
+#include <set>
 #include <fstream>
 
 #include "base.h"
@@ -23,23 +23,32 @@ namespace rocket
 			int row;
 			float value;
 			Type type;
-
+			bool operator<(const Key& r) const { 
+				return row < r.row; 
+			}
 		};
+		Track() = default;
+		Track(const std::string& name);
+		Track(const Track& other) = delete;
+		Track& operator=(const Track& other) = delete;
+		Track(Track&& other);
+		Track& operator=(Track&& other);
 
-		double GetVal(double);
+		double GetVal(int) const;
 		void SetKey(Key&& key);
 		bool DelKey(int);
 		void ClearKeys();
 		void SaveKeys(std::ofstream& stream);
+		const std::string& GetName() const;
 	private:
-		std::list<Track::Key>::iterator Track::FindKey(int row);
+		std::set<Track::Key>::iterator Track::FindKey(int row) const;
 
 		inline bool IsKeyFrame(int row)
 		{
 			return FindKey(row) != m_keys.end();
 		}
-		std::string name;
-		std::list<Key> m_keys;
+		std::string m_name;
+		std::set<Key> m_keys;
 	};
 }
 
