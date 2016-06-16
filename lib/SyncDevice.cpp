@@ -1,4 +1,4 @@
-#include "device.h"
+#include "SyncDevice.h"
 #include "track.h"
 #include <assert.h>
 #include <ctype.h>
