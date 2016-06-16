@@ -48,30 +48,44 @@ namespace rocket
 		return *this;
 	}
 
+
 	double Track::GetVal(int row) const
 	{
 		/* If we have no keys at all, return a constant 0 */
 		if (m_keys.size() == 0)
 			return 0.0f;
-		auto it = std::lower_bound(m_keys.begin(), m_keys.end(), row, [](const Key& key, int value)
-		{ 
+
+		auto first = m_keys.begin();
+		auto last = std::prev(m_keys.end());
+		auto higher = std::upper_bound(m_keys.begin(), std::prev(m_keys.end()), row, [](int value, const Track::Key& key)
+		{
+			return value < key.row;
+		});
+
+		if(higher == m_keys.begin())
+			return higher->value;
+
+		auto lower = std::lower_bound(m_keys.begin(), m_keys.end(), row, [](const Track::Key& key, int value)
+		{
 			return key.row < value;
 		});
 
-		/* at the edges, return the first/last value */
-		if (it == m_keys.begin() || std::distance(it, std::prev(m_keys.end())) < 2)
-			return it->value;
+		if (lower != m_keys.begin())
+			lower--;
+
+		if (lower == std::prev(m_keys.end()))
+			return lower->value;
 
 		/* interpolate according to key-type */
-		switch (it->type) {
+		switch (lower->type) {
 		case Track::Key::Type::KEY_STEP:
-			return it->value;
+			return lower->value;
 		case Track::Key::Type::KEY_LINEAR:
-			return key_linear(*it,*(std::next(it)), row);
+			return key_linear(*lower,*(std::next(lower)), row);
 		case Track::Key::Type::KEY_SMOOTH:
-			return key_smooth(*it, *(std::next(it)), row);
+			return key_smooth(*lower, *(std::next(lower)), row);
 		case Track::Key::Type::KEY_RAMP:
-			return key_ramp(*it, *(std::next(it)), row);
+			return key_ramp(*lower, *(std::next(lower)), row);
 		default:
 			assert(0);
 			return 0.0f;
