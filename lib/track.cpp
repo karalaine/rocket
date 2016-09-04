@@ -43,7 +43,7 @@ namespace rocket
 
 	Track & Track::operator=(Track && other)
 	{ 
-		m_name = std::move(m_name);
+		m_name = std::move(other.m_name);
 		m_keys = std::move(other.m_keys);
 		return *this;
 	}
@@ -55,8 +55,6 @@ namespace rocket
 		if (m_keys.size() == 0)
 			return 0.0f;
 
-		auto first = m_keys.begin();
-		auto last = std::prev(m_keys.end());
 		auto higher = std::upper_bound(m_keys.begin(), std::prev(m_keys.end()), row, [](int value, const Track::Key& key)
 		{
 			return value < key.row;

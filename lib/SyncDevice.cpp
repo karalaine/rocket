@@ -12,7 +12,7 @@ namespace rocket
 {
 
 #ifndef SYNC_PLAYER
-#pragma comment(lib, "Ws2_32.lib")
+
 #define CLIENT_GREET "hello, synctracker!"
 #define SERVER_GREET "hello, demo!"
 
@@ -35,6 +35,7 @@ namespace rocket
 #ifdef _MSC_VER
 #pragma warning(push)
 #pragma warning(disable: 4127)
+#pragma comment(lib, "Ws2_32.lib")
 #endif
 		FD_SET(socket, &fds);
 #ifdef _MSC_VER
@@ -108,7 +109,7 @@ namespace rocket
 
 #else
 
-		he = gethostbyname(host);
+		he = gethostbyname(host.c_str());
 		if (!he)
 			return INVALID_SOCKET;
 
@@ -321,7 +322,7 @@ namespace rocket
 
 		for (auto& track : m_tracks) {
 			track.ClearKeys();
-			if (FetchTrackData(track.GetName())) {
+			if (FetchTrackData(track.GetName()) == false) {
 				closesocket(m_socket);
 				m_socket = INVALID_SOCKET;
 				return false;

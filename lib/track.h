@@ -41,7 +41,7 @@ namespace rocket
 		void SaveKeys(std::ofstream& stream);
 		const std::string& GetName() const;
 	private:
-		std::set<Track::Key>::iterator Track::FindKey(int row) const;
+		std::set<Track::Key>::iterator FindKey(int row) const;
 
 		inline bool IsKeyFrame(int row)
 		{
