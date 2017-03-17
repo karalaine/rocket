@@ -302,7 +302,7 @@ namespace rocket
 
 		if (xrecv(m_socket, (char *)&track, sizeof(track), 0) ||
 			xrecv(m_socket, (char *)&row, sizeof(row), 0))
-			return -1;
+			return false;
 
 		track = ntohl(track);
 		row = ntohl(row);
@@ -360,7 +360,8 @@ namespace rocket
 			case PAUSE:
 				if (xrecv(m_socket, (char *)&flag, 1, 0))
 					goto sockerr;
-				cb.pause(cb_param, flag);
+				//TODO: Check boolean cast
+				cb.pause(cb_param, flag == 0);
 				break;
 			case SAVE_TRACKS:
 				SaveTracks();
